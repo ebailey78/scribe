@@ -75,25 +75,33 @@ class ScribeProGUI:
         self.main_frame = ctk.CTkFrame(self.root, fg_color="#1a1a1a", corner_radius=0)
         self.main_frame.pack(fill="both", expand=True)
         
-        # Waveform Display
+        # Waveform Display (smaller height to fit bars better)
         self.waveform_canvas = ctk.CTkCanvas(
             self.main_frame,
             bg="#111111",
-            height=50,
+            height=36,  # Reduced from 50 to 36
             width=300,
             highlightthickness=0
         )
         self.waveform_canvas.pack(side="left", fill="both", expand=True, padx=(10, 10))
         
-        # Time Display with monospace font
-        self.timer_label = ctk.CTkLabel(
+        # Time Display with dark frame (LCD display look)
+        timer_frame = ctk.CTkFrame(
             self.main_frame,
+            fg_color="#111111",
+            corner_radius=4,
+            border_width=0
+        )
+        timer_frame.pack(side="left", padx=10, pady=5)
+        
+        self.timer_label = ctk.CTkLabel(
+            timer_frame,
             text="00:00:00",
             font=("Courier New", 26, "bold"),  # LCD-style font
             text_color="#00d9ff",
             width=140
         )
-        self.timer_label.pack(side="left", padx=10)
+        self.timer_label.pack(padx=8, pady=4)
         
         # Controls - Generate Icons with cyan color for LCD look
         self.icon_play = self.create_media_icon("play", size=16, color="#00d9ff")
