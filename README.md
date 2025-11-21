@@ -132,6 +132,17 @@ synthesis:
   logseq_graph_path: ""     # Path to Logseq pages folder (optional)
 ```
 
+### Microphone Mixing (optional)
+Enable mic+system audio mixing in `config.yaml` to capture your voice even when it is not played through speakers:
+```yaml
+audio:
+  mix_mic: true           # Turn on mic+loopback mixing
+  mic_device: null        # Use default mic; set to an exact device name to override
+  mic_gain: 1.0           # Adjust mic level if needed
+  loopback_gain: 1.0      # Adjust system audio level if needed
+```
+CLI overrides: `scribe record --mix-mic --mic-device "<name>" --mic-gain 1.2 --loopback-gain 0.8`. If the mic is unavailable, Scribe falls back to loopback-only and continues recording.
+
 ### Context Configuration (`context.md`)
 You can provide free-form context to help the AI understand your environment. This file is located at `Documents/Scribe/config/context.md`.
 Use it to list:

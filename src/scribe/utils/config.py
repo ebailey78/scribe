@@ -1,4 +1,5 @@
 import os
+import copy
 import yaml
 from pathlib import Path
 from scribe.utils.paths import get_config_dir
@@ -7,6 +8,12 @@ class ConfigManager:
     """Manages application configuration via YAML."""
     
     DEFAULT_CONFIG = {
+        "audio": {
+            "mix_mic": False,
+            "mic_device": None,
+            "mic_gain": 1.0,
+            "loopback_gain": 1.0,
+        },
         "transcription": {
             "min_duration": 60,
             "max_duration": 90,
@@ -30,14 +37,14 @@ class ConfigManager:
         """Load config from file or create default if missing."""
         if not self.config_path.exists():
             self.save_config(self.DEFAULT_CONFIG)
-            return self.DEFAULT_CONFIG.copy()
+            return copy.deepcopy(self.DEFAULT_CONFIG)
         
         try:
             with open(self.config_path, "r", encoding="utf-8") as f:
                 user_config = yaml.safe_load(f) or {}
                 
             # Merge with defaults to ensure all keys exist
-            merged_config = self.DEFAULT_CONFIG.copy()
+            merged_config = copy.deepcopy(self.DEFAULT_CONFIG)
             
             # Deep merge for nested dictionaries
             for section, values in user_config.items():
@@ -50,7 +57,7 @@ class ConfigManager:
             
         except Exception as e:
             print(f"Error loading config: {e}")
-            return self.DEFAULT_CONFIG.copy()
+            return copy.deepcopy(self.DEFAULT_CONFIG)
 
     def save_config(self, config_data):
         """Save configuration to file."""

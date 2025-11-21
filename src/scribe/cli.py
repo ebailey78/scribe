@@ -10,7 +10,46 @@ Usage:
 import argparse
 import threading
 import time
+from typing import Optional
 
+def print_devices():
+    """List playback loopback devices and capture microphones."""
+    from colorama import Fore, Style
+    try:
+        import soundcard as sc
+    except Exception as e:
+        print(f"{Fore.RED}Unable to list devices (soundcard import failed): {e}{Style.RESET_ALL}")
+        return
+
+    try:
+        devices = sc.all_microphones(include_loopback=True)
+    except Exception as e:
+        print(f"{Fore.RED}Unable to list devices: {e}{Style.RESET_ALL}")
+        return
+
+    def safe_name(obj: Optional[object]) -> str:
+        return getattr(obj, "name", "") if obj else ""
+
+    default_speaker = safe_name(getattr(sc, "default_speaker", lambda: None)())
+    default_mic = safe_name(getattr(sc, "default_microphone", lambda: None)())
+
+    if not devices:
+        print(f"{Fore.YELLOW}No audio devices found.{Style.RESET_ALL}")
+        return
+
+    print(f"{Fore.CYAN}Playback (loopback) and capture devices:{Style.RESET_ALL}")
+    for idx, dev in enumerate(devices):
+        tags = []
+        if dev.isloopback:
+            tags.append("loopback")
+            if default_speaker and default_speaker in dev.name:
+                tags.append("default-output")
+        else:
+            tags.append("capture")
+            if default_mic and default_mic == dev.name:
+                tags.append("default-mic")
+        tag_str = f" [{' | '.join(tags)}]" if tags else ""
+        print(f"[{idx}] {dev.name}{tag_str}")
 
 def gui_command(args):
     """Launch the GUI."""
@@ -61,13 +100,22 @@ def record_command(args):
     from scribe.core import SessionManager, AudioRecorder, Transcriber
     from scribe.synthesis import MeetingSynthesizer
     from colorama import Fore, Style
+
+    if args.list_devices:
+        print_devices()
+        return
     
     print(f"{Fore.MAGENTA}=== Scribe Recording ==={Style.RESET_ALL}")
     
     # Initialize Session
     session = SessionManager()
     
-    recorder = AudioRecorder()
+    recorder = AudioRecorder(
+        mix_mic=args.mix_mic,
+        mic_device=args.mic_device,
+        mic_gain=args.mic_gain,
+        loopback_gain=args.loopback_gain,
+    )
     recorder.select_device(manual_mode=args.manual)
     
     transcriber = Transcriber(recorder.q, recorder.native_sample_rate, session)
@@ -112,6 +160,11 @@ def main():
     record_parser = subparsers.add_parser('record', help='Start CLI recording')
     record_parser.add_argument('--manual', action='store_true', 
                               help='Force manual device selection')
+    record_parser.add_argument('--list-devices', action='store_true', help='List playback/mic devices and exit')
+    record_parser.add_argument('--mix-mic', action='store_true', help='Enable mic+loopback mixing (optional override of config)')
+    record_parser.add_argument('--mic-device', type=str, default=None, help='Exact microphone device name to use when mixing')
+    record_parser.add_argument('--mic-gain', type=float, default=None, help='Gain to apply to mic channel when mixing')
+    record_parser.add_argument('--loopback-gain', type=float, default=None, help='Gain to apply to loopback channel when mixing')
     record_parser.set_defaults(func=record_command)
     
     args = parser.parse_args()
