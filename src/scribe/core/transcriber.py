@@ -182,7 +182,7 @@ class Transcriber:
         self.buffer = np.array([], dtype='float32')
 
     def process_audio(self):
-        """Main processing loop for transcription."""
+        """Main processing loop for transcription with smart pause detection."""
         logging.info("Transcriber.process_audio loop started")
         
         while True:
@@ -195,10 +195,30 @@ class Transcriber:
                         data = data.flatten()
                     self.buffer = np.concatenate((self.buffer, data))
                 
-                # Check if we have enough audio to process (e.g., > 5 seconds)
-                threshold_samples = self.native_sample_rate * 5
-                if len(self.buffer) >= threshold_samples:
-                    self.transcribe_buffer()
+                # Calculate current buffer duration
+                buffer_duration = len(self.buffer) / self.native_sample_rate
+                
+                # Smart segmentation logic
+                if buffer_duration >= self.min_duration:
+                    # We have minimum duration, now check for silence or max duration
+                    
+                    # Force transcription if we've reached max duration
+                    if buffer_duration >= self.max_duration:
+                        logging.info(f"Max duration ({self.max_duration}s) reached, forcing transcription")
+                        self.transcribe_buffer()
+                    else:
+                        # Look for silence in recent audio to find natural pause
+                        # Check last N seconds of audio for silence
+                        silence_check_samples = int(self.silence_duration * self.native_sample_rate)
+                        
+                        if len(self.buffer) >= silence_check_samples:
+                            recent_audio = self.buffer[-silence_check_samples:]
+                            recent_max_amp = np.max(np.abs(recent_audio))
+                            
+                            # If recent audio is silent (below threshold), transcribe now
+                            if recent_max_amp < self.silence_threshold:
+                                logging.info(f"Silence detected after {buffer_duration:.1f}s, transcribing at natural pause")
+                                self.transcribe_buffer()
                 
                 time.sleep(0.1)
                 
