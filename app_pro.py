@@ -20,7 +20,7 @@ class ScribeProGUI:
         
         # Create main window
         self.root = ctk.CTk()
-        self.root.title("Scribe")
+        self.root.title("Scribe — System Audio")  # Moved indicator to titlebar
         
         # Compact window size (shows in taskbar)
         self.root.geometry("800x50")
@@ -71,15 +71,15 @@ class ScribeProGUI:
         self.root.protocol("WM_DELETE_WINDOW", self.minimize_to_tray)
 
     def setup_ui(self):
-        # Main horizontal container
+        # Main horizontal container with breathing room
         self.main_frame = ctk.CTkFrame(self.root, fg_color="#1a1a1a", corner_radius=0)
-        self.main_frame.pack(fill="both", expand=True)
+        self.main_frame.pack(fill="both", expand=True, pady=3)
         
-        # Waveform Display (smaller height to fit bars better)
+        # Waveform Display (full height restored)
         self.waveform_canvas = ctk.CTkCanvas(
             self.main_frame,
             bg="#111111",
-            height=36,  # Reduced from 50 to 36
+            height=36,  # Restored full height
             width=300,
             highlightthickness=0
         )
@@ -103,12 +103,22 @@ class ScribeProGUI:
         )
         self.timer_label.pack(padx=8, pady=4)
         
-        # Controls - Generate Icons with cyan color for LCD look
-        self.icon_play = self.create_media_icon("play", size=16, color="#00d9ff")
-        self.icon_pause = self.create_media_icon("pause", size=14, color="#00d9ff")
-        self.icon_resume = self.create_media_icon("play", size=14, color="#00d9ff")
-        self.icon_stop = self.create_media_icon("square", size=16, color="#00d9ff")
-        self.icon_settings = self.create_media_icon("settings", size=16, color="#00d9ff")
+        # Status label below timer
+        self.status_label = ctk.CTkLabel(
+            self.main_frame,
+            text="Ready",
+            font=("Arial", 9),
+            text_color="#888888",
+            width=80
+        )
+        self.status_label.pack(side="left", padx=(0, 15))
+        
+        # Controls - Generate larger, more tactile icons
+        self.icon_play = self.create_media_icon("play", size=20, color="#00d9ff")  # Increased from 16
+        self.icon_pause = self.create_media_icon("pause", size=18, color="#00d9ff")  # Increased from 14
+        self.icon_resume = self.create_media_icon("play", size=18, color="#00d9ff")  # Increased from 14
+        self.icon_stop = self.create_media_icon("square", size=20, color="#00d9ff")  # Increased from 16
+        self.icon_settings = self.create_media_icon("settings", size=18, color="#00d9ff")  # Increased from 16
         
         # Pause Button
         self.pause_button = ctk.CTkButton(
@@ -226,10 +236,10 @@ class ScribeProGUI:
             
             self.phase += 0.15
             
-            # Bar parameters
+            # Bar parameters with increased spacing
             num_bars = 60
             bar_width = 3
-            gap = 2
+            gap = 4  # Increased from 2 to 4 for less visual density
             total_width = num_bars * (bar_width + gap)
             start_x = (canvas_width - total_width) / 2
             
@@ -255,11 +265,11 @@ class ScribeProGUI:
                     
                     h = max(4, wave_h * 40 * self.audio_level * window * noise)
                 
-                # Color based on state
+                # Color based on state with dimming for inactive
                 if self.is_paused:
                     color = "#444444"
                 elif not self.is_recording:
-                    color = "#222222"
+                    color = "#111111"  # Much dimmer when idle (was #222222)
                 else:
                     color = "#00d9ff"
                 
@@ -303,6 +313,9 @@ class ScribeProGUI:
     
     def start_recording(self):
         try:
+            self.status_label.configure(text="Starting...", text_color="#FFA500")
+            self.root.update()
+            
             self.session = SessionManager()
             self.recorder = AudioRecorder()
             import soundcard as sc
@@ -343,6 +356,8 @@ class ScribeProGUI:
             )
             self.pause_button.configure(state="normal")
             
+            self.status_label.configure(text="Recording", text_color="#00d9ff")
+            
             if self.tray_icon:
                 self.tray_icon.icon = self.create_icon("red", show_recording_indicator=True)
         
@@ -374,6 +389,7 @@ class ScribeProGUI:
             self.timer_running = False
             
             self.timer_label.configure(text="Processing...")
+            self.status_label.configure(text="Processing", text_color="#FFA500")
             self.record_button.configure(state="disabled")
             self.pause_button.configure(state="disabled")
             
@@ -447,6 +463,7 @@ class ScribeProGUI:
     
     def synthesis_complete(self):
         self.timer_label.configure(text="Complete!")
+        self.status_label.configure(text="Complete", text_color="#00ff00")
         
         if self.tray_icon:
             self.tray_icon.icon = self.create_icon("gray", show_recording_indicator=False)
@@ -460,6 +477,7 @@ class ScribeProGUI:
     
     def reset_ui(self):
         self.timer_label.configure(text="00:00:00")
+        self.status_label.configure(text="Ready", text_color="#888888")
         self.record_button.configure(state="normal")
         self.pause_button.configure(state="disabled")
         self.progress_bar.set(0)
