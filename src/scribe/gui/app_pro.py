@@ -13,6 +13,7 @@ import time
 from scribe.core import SessionManager, AudioRecorder, Transcriber
 from scribe.synthesis import MeetingSynthesizer
 from scribe.utils.paths import get_sessions_dir, get_config_dir
+from scribe.utils.instance import acquire_lock, release_lock
 
 class ScribeProGUI:
     def __init__(self):
@@ -76,6 +77,9 @@ class ScribeProGUI:
         
         # Handle window close
         self.root.protocol("WM_DELETE_WINDOW", self.minimize_to_tray)
+        
+        # Acquire instance lock
+        acquire_lock()
 
     def setup_ui(self):
         # Main horizontal container with breathing room
@@ -710,6 +714,7 @@ class ScribeProGUI:
                 self.tray_icon.stop()
             self.root.quit()
             self.root.destroy()
+            release_lock()
             
         # Ensure quit runs on main thread
         self.root.after(0, _quit)

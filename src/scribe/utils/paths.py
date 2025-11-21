@@ -40,3 +40,12 @@ def get_config_dir():
         Path: Path to ~/Documents/Scribe/config/
     """
     return get_scribe_dir() / "config"
+
+
+def get_lock_file():
+    """Get the lock file path.
+    
+    Returns:
+        Path: Path to ~/Documents/Scribe/.lock
+    """
+    return get_scribe_dir() / ".lock"

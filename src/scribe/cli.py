@@ -14,6 +14,12 @@ import time
 
 def gui_command(args):
     """Launch the GUI."""
+    from scribe.utils.instance import check_instance_running
+    
+    if check_instance_running():
+        print("⚠️  Scribe GUI is already running. Please close the existing instance first.")
+        return
+
     if args.blocking:
         from scribe.gui.app_pro import ScribeProGUI
         app = ScribeProGUI()
