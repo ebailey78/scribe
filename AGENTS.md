@@ -140,6 +140,22 @@ Transcriber.transcribe_buffer()
 If auto-stop triggered → call auto_stop_callback()
 ```
 
+## Workflow Protocol
+
+**1. One Feature Per Chat**
+- **Scope:** Each chat session should focus on a SINGLE feature or bug fix.
+- **Branching:** ALWAYS create a new feature branch at the start (`git checkout -b feature/name`).
+- **Commits:** Make regular, meaningful commits after each logical step. Do not wait until the end.
+
+**2. Scope Management**
+- **Stay Focused:** If the user (or agent) drifts to unrelated changes, PAUSE.
+- **Capture Ideas:** Offer to create a GitHub issue for the new idea instead of implementing it immediately.
+- **Enforce Boundaries:** Politely suggest finishing the current task first before context switching.
+
+**3. Git Hygiene**
+- **Atomic Commits:** "Fix login bug" is better than "Fix login, update readme, and refactor core".
+- **Descriptive Messages:** Explain *why* a change was made, not just *what*.
+
 ## Development Workflow
 
 ### Making Changes
