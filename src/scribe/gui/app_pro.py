@@ -1,18 +1,18 @@
+
 import customtkinter as ctk
 import threading
 import os
 import math
 import random
+from pathlib import Path
 from PIL import Image, ImageDraw
 import pystray
 from pystray import MenuItem as item
 import sys
 import time
-
-# Import our scribe components from the package
 from scribe.core import SessionManager, AudioRecorder, Transcriber
 from scribe.synthesis import MeetingSynthesizer
-from scribe.utils.paths import get_sessions_dir
+from scribe.utils.paths import get_sessions_dir, get_config_dir
 
 class ScribeProGUI:
     def __init__(self):
@@ -212,8 +212,125 @@ class ScribeProGUI:
         return ctk.CTkImage(light_image=img, dark_image=img, size=(size, size))
 
     def open_settings(self):
-        print("Settings clicked")
-        pass
+        """Open settings menu."""
+        # Create a small popup window
+        self.settings_window = ctk.CTkToplevel(self.root)
+        self.settings_window.title("Settings")
+        self.settings_window.geometry("300x180")
+        self.settings_window.resizable(False, False)
+        self.settings_window.attributes("-topmost", True)
+        
+        # Center relative to main window
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 150
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 90
+        self.settings_window.geometry(f"+{x}+{y}")
+        
+        # Label
+        label = ctk.CTkLabel(self.settings_window, text="Configuration", font=("Arial", 16, "bold"))
+        label.pack(pady=(15, 10))
+        
+        # Jargon Button
+        btn_jargon = ctk.CTkButton(
+            self.settings_window, 
+            text="Edit Jargon List", 
+            command=self.open_jargon_file,
+            fg_color="#333333", 
+            hover_color="#444444"
+        )
+        btn_jargon.pack(pady=5, padx=20, fill="x")
+        
+        # Config Button
+        btn_config = ctk.CTkButton(
+            self.settings_window, 
+            text="Edit Config (YAML)", 
+            command=self.open_config_file,
+            fg_color="#333333", 
+            hover_color="#444444"
+        )
+        btn_config.pack(pady=5, padx=20, fill="x")
+
+        # Context Button
+        btn_context = ctk.CTkButton(
+            self.settings_window, 
+            text="Edit Context (Markdown)", 
+            command=self.open_context_file,
+            fg_color="#333333", 
+            hover_color="#444444"
+        )
+        btn_context.pack(pady=5, padx=20, fill="x")
+
+    def open_jargon_file(self):
+        """Open the jargon configuration file."""
+        try:
+            config_dir = get_config_dir()
+            jargon_file = config_dir / "jargon.txt"
+            
+            # Ensure directory and file exist
+            if not config_dir.exists():
+                os.makedirs(config_dir)
+            
+            if not jargon_file.exists():
+                with open(jargon_file, "w", encoding="utf-8") as f:
+                    f.write("# Add your custom acronyms or names below, one per line.\n")
+                    f.write("# These will be prioritized by the AI transcriber.\n")
+                    f.write("EBITDA\nHEDIS\nCity of Hope\nLogseq\n")
+            
+            os.startfile(jargon_file)
+            if hasattr(self, 'settings_window') and self.settings_window.winfo_exists():
+                self.settings_window.destroy()
+            
+        except Exception as e:
+            print(f"Error opening jargon file: {e}")
+
+    def open_context_file(self):
+        """Open the context markdown file."""
+        try:
+            config_dir = get_config_dir()
+            context_file = config_dir / "context.md"
+            
+            # Ensure directory exists
+            if not config_dir.exists():
+                os.makedirs(config_dir)
+            
+            # Create from template if missing
+            if not context_file.exists():
+                template_path = Path(__file__).parent.parent.parent.parent / "config" / "context_template.md"
+                # Fallback content if template missing
+                content = "# Context Configuration\n\nAdd details about your team, projects, and goals here."
+                
+                if template_path.exists():
+                    try:
+                        with open(template_path, "r", encoding="utf-8") as f:
+                            content = f.read()
+                    except Exception:
+                        pass
+                
+                with open(context_file, "w", encoding="utf-8") as f:
+                    f.write(content)
+            
+            os.startfile(context_file)
+            if hasattr(self, 'settings_window') and self.settings_window.winfo_exists():
+                self.settings_window.destroy()
+                
+        except Exception as e:
+            print(f"Error opening context file: {e}")
+
+    def open_config_file(self):
+        """Open the main config.yaml file."""
+        try:
+            # Initialize ConfigManager to ensure file exists with defaults
+            from scribe.utils.config import ConfigManager
+            ConfigManager()
+            
+            config_dir = get_config_dir()
+            config_file = config_dir / "config.yaml"
+            
+            os.startfile(config_file)
+            if hasattr(self, 'settings_window') and self.settings_window.winfo_exists():
+                self.settings_window.destroy()
+                
+        except Exception as e:
+            print(f"Error opening config file: {e}")
 
     def animate_waveform(self):
         """Draw animated bar-style waveform."""

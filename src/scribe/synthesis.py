@@ -12,10 +12,8 @@ import shutil
 from colorama import Fore, Style
 from tqdm import tqdm
 
-# Configuration: Logseq Graph Path
-# Set this to your Logseq pages folder
-LOGSEQ_GRAPH_PATH = r"C:\Users\idemr\Logseq\pages"  # Update this path!
-
+from scribe.utils.paths import get_config_dir
+from scribe.utils.config import ConfigManager
 
 class MeetingSynthesizer:
     """Post-processing engine that transforms raw transcripts into structured Logseq notes using Qwen3:8b."""
@@ -25,9 +23,35 @@ class MeetingSynthesizer:
         self.transcript_path = os.path.join(session_dir, "transcript_full.txt")
         self.output_path = os.path.join(session_dir, "notes_logseq.md")
         self.final_path = None  # Will be set after title generation
+        
+        # Load configuration
+        self.config_manager = ConfigManager()
+        self.synthesis_config = self.config_manager.config.get("synthesis", {})
+        
         self.ollama_url = "http://localhost:11434/api/generate"
-        self.model = "qwen3:8b"
+        self.model = self.synthesis_config.get("ollama_model", "qwen3:8b")
+        self.logseq_path = self.synthesis_config.get("logseq_graph_path", "")
+        
+        # Load context
+        self.context_content = self.load_context()
+        
         self.system_prompt = "You are an expert technical secretary. Output strictly in Logseq Markdown format."
+        if self.context_content:
+            self.system_prompt += f"\n\nAdditional Context:\n{self.context_content}"
+
+    def load_context(self):
+        """Load user context from config file."""
+        try:
+            config_dir = get_config_dir()
+            context_file = config_dir / "context.md"
+            
+            if context_file.exists():
+                with open(context_file, "r", encoding="utf-8") as f:
+                    return f.read().strip()
+            return ""
+        except Exception as e:
+            print(f"{Fore.YELLOW}Warning: Could not load context.md: {e}{Style.RESET_ALL}")
+            return ""
     
     def read_transcript(self):
         """Load the raw transcript file."""
@@ -160,13 +184,13 @@ Output in Logseq Markdown format with proper heading levels."""
     
     def export_to_logseq(self, final_file_path):
         """Copy the final notes to Logseq graph if path exists."""
-        if not os.path.exists(LOGSEQ_GRAPH_PATH):
-            print(f"{Fore.YELLOW}⚠️  Logseq path not found. Notes saved to local session folder only.{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}   Configure LOGSEQ_GRAPH_PATH in scribe/synthesis.py{Style.RESET_ALL}")
+        if not self.logseq_path or not os.path.exists(self.logseq_path):
+            print(f"{Fore.YELLOW}⚠️  Logseq path not found or not configured.{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}   Configure 'logseq_graph_path' in config.yaml{Style.RESET_ALL}")
             return False
         
         try:
-            dest = os.path.join(LOGSEQ_GRAPH_PATH, os.path.basename(final_file_path))
+            dest = os.path.join(self.logseq_path, os.path.basename(final_file_path))
             shutil.copy2(final_file_path, dest)
             print(f"{Fore.GREEN}✅ Exported to Logseq: {dest}{Style.RESET_ALL}")
             return True

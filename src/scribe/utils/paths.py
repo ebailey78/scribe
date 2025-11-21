@@ -31,3 +31,12 @@ def get_logs_dir():
         Path: Path to ~/Documents/Scribe/logs/
     """
     return get_scribe_dir() / "logs"
+
+
+def get_config_dir():
+    """Get the config directory.
+    
+    Returns:
+        Path: Path to ~/Documents/Scribe/config/
+    """
+    return get_scribe_dir() / "config"
