@@ -1,189 +1,24 @@
 """
-Core recording and transcription functionality for Scribe.
+Audio transcription functionality for Scribe.
 
-This module contains the core classes for audio recording, transcription,
-and session management.
+Handles real-time audio transcription using Whisper with smart segmentation.
 """
 
 import os
 import sys
-import queue
-import threading
 import time
+import logging
 import traceback
 import numpy as np
 import soundfile as sf
 import scipy.signal
-import warnings
 from datetime import datetime
-from colorama import init, Fore, Style
+from colorama import Fore, Style
 from faster_whisper import WhisperModel
 
-# Import utilities
-from scribe.utils.paths import get_scribe_dir, get_sessions_dir
-from scribe.utils.logging import setup_logging
-
-# Add NVIDIA cuDNN and cuBLAS to PATH for CUDA support
-# This must be done BEFORE importing ctranslate2 or faster_whisper
-try:
-    import nvidia.cudnn
-    import nvidia.cublas
-    
-    libs = [nvidia.cudnn, nvidia.cublas]
-    
-    for lib in libs:
-        lib_path = list(lib.__path__)[0]
-        bin_path = os.path.join(lib_path, 'bin')
-        if os.path.exists(bin_path):
-            # Add to DLL search path (for Python 3.8+)
-            os.add_dll_directory(bin_path)
-            # Add to PATH environment variable (for legacy/other dependencies)
-            os.environ['PATH'] = bin_path + os.pathsep + os.environ['PATH']
-            
-except (ImportError, AttributeError, OSError, IndexError):
-    pass  # CUDA libraries not available, will fall back to CPU
-
-# Suppress pkg_resources deprecation warning from ctranslate2
-warnings.filterwarnings("ignore", category=UserWarning, module="ctranslate2")
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-warnings.filterwarnings("ignore", message=".*pkg_resources.*")
-
-# Initialize colorama
-init(autoreset=True)
-
-# Setup logger
-logger = setup_logging()
-
-# Import soundcard after CUDA setup
-import soundcard as sc
-
-
-class SessionManager:
-    """Manages recording session directories and files."""
-    
-    def __init__(self):
-        self.session_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        
-        # Use Documents/Scribe/sessions
-        sessions_root = get_sessions_dir()
-        
-        self.base_dir = str(sessions_root / self.session_id)
-        self.audio_dir = os.path.join(self.base_dir, "audio_chunks")
-        self.transcript_raw = os.path.join(self.base_dir, "transcript_full.txt")
-        self.transcript_logseq = os.path.join(self.base_dir, "notes_logseq.md")
-        
-        # Create directories
-        os.makedirs(self.audio_dir, exist_ok=True)
-        
-        # Log to file
-        logger.info(f"Session Started: {self.session_id}")
-        logger.info(f"Session Directory: {self.base_dir}")
-        logger.info(f"Audio Storage: {self.audio_dir}")
-        
-        # Minimal console output
-        print(f"{Fore.MAGENTA}=== Session Started: {self.session_id} ==={Style.RESET_ALL}")
-        print(f"{Fore.CYAN}Session Directory: {self.base_dir}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}Audio Storage: {self.audio_dir}{Style.RESET_ALL}")
-
-
-class AudioRecorder:
-    """Records system audio using soundcard WASAPI loopback."""
-    
-    def __init__(self):
-        self.q = queue.Queue()
-        self.target_sample_rate = 16000
-        self.native_sample_rate = 48000  # Default, will be updated
-        self.channels = 1
-        self.mic = None
-        self.running = False
-        self.paused = False  # Soft pause state
-        
-    def pause(self):
-        """Pause recording (keeps stream alive)."""
-        self.paused = True
-    
-    def resume(self):
-        """Resume recording."""
-        self.paused = False
-
-    def find_default_loopback(self, mics):
-        """Try to find the loopback device corresponding to the system default speaker."""
-        try:
-            default_speaker = sc.default_speaker()
-            for idx, mic in enumerate(mics):
-                if mic.isloopback and default_speaker.name in mic.name:
-                    return idx, mic
-        except Exception:
-            pass
-        return None, None
-
-    def select_device(self, manual_mode=False):
-        """Select audio device (auto or manual)."""
-        print(f"{Fore.CYAN}Searching for Audio Input devices (including Loopback)...{Style.RESET_ALL}")
-        try:
-            mics = sc.all_microphones(include_loopback=True)
-        except Exception as e:
-            print(f"{Fore.RED}Error listing devices: {e}{Style.RESET_ALL}")
-            sys.exit(1)
-
-        if not mics:
-            print(f"{Fore.RED}No devices found.{Style.RESET_ALL}")
-            sys.exit(1)
-
-        # Auto-selection logic
-        if not manual_mode:
-            idx, default_mic = self.find_default_loopback(mics)
-            if default_mic:
-                print(f"{Fore.GREEN}Auto-selected default device:{Style.RESET_ALL} [{idx}] {default_mic.name}")
-                self.mic = default_mic
-                return
-
-        print(f"{Fore.GREEN}Found the following devices:{Style.RESET_ALL}")
-        for idx, mic in enumerate(mics):
-            loopback_str = f"{Fore.YELLOW}(Loopback){Style.RESET_ALL}" if mic.isloopback else ""
-            print(f"[{idx}] {mic.name} {loopback_str}")
-
-        while True:
-            try:
-                selection = int(input(f"{Fore.YELLOW}Select device index [0-{len(mics)-1}]: {Style.RESET_ALL}"))
-                if 0 <= selection < len(mics):
-                    self.mic = mics[selection]
-                    print(f"Selected: {self.mic.name}")
-                    break
-                else:
-                    print("Invalid selection.")
-            except ValueError:
-                print("Please enter a number.")
-
-    def record_loop(self):
-        """Main recording loop."""
-        try:
-            with self.mic.recorder(samplerate=self.native_sample_rate, channels=self.channels) as recorder:
-                print(f"{Fore.GREEN}Recording started at {self.native_sample_rate} Hz...{Style.RESET_ALL}")
-                while self.running:
-                    data = recorder.record(numframes=4800)
-                    # Soft pause: skip processing but keep stream alive
-                    if not self.paused:
-                        self.q.put(data)
-        except Exception as e:
-            print(f"{Fore.RED}Recording error: {e}{Style.RESET_ALL}")
-            traceback.print_exc()
-            self.running = False
-
-    def start_recording(self):
-        """Start recording in background thread."""
-        self.running = True
-        self.thread = threading.Thread(target=self.record_loop, daemon=True)
-        self.thread.start()
-
-    def stop_recording(self):
-        """Stop recording."""
-        self.running = False
-        if hasattr(self, 'thread'):
-            self.thread.join(timeout=1)
-
-
 from scribe.utils.config import ConfigManager
+from scribe.utils.paths import get_config_dir
+
 
 class Transcriber:
     """Transcribes audio in real-time using Whisper with smart segmentation."""
@@ -256,6 +91,20 @@ class Transcriber:
         except Exception as e:
             print(f"Error loading jargon: {e}")
             return ""
+
+
+    def save_audio_chunk(self, audio_data):
+        """Save raw audio chunk to disk for debugging/backup purposes."""
+        try:
+            self.chunk_counter += 1
+            chunk_filename = f"chunk_{self.chunk_counter:04d}.wav"
+            chunk_path = os.path.join(self.session.audio_dir, chunk_filename)
+            
+            # Save as WAV file
+            sf.write(chunk_path, audio_data, self.native_sample_rate)
+            logging.debug(f"Saved audio chunk: {chunk_filename}")
+        except Exception as e:
+            logging.error(f"Error saving audio chunk: {e}")
 
     def transcribe_buffer(self):
         """Transcribe the current audio buffer."""
@@ -331,3 +180,29 @@ class Transcriber:
             traceback.print_exc()
         
         self.buffer = np.array([], dtype='float32')
+
+    def process_audio(self):
+        """Main processing loop for transcription."""
+        logging.info("Transcriber.process_audio loop started")
+        
+        while True:
+            try:
+                # Move data from queue to buffer
+                while not self.queue.empty():
+                    data = self.queue.get_nowait()
+                    # Ensure data is flat
+                    if len(data.shape) > 1:
+                        data = data.flatten()
+                    self.buffer = np.concatenate((self.buffer, data))
+                
+                # Check if we have enough audio to process (e.g., > 5 seconds)
+                threshold_samples = self.native_sample_rate * 5
+                if len(self.buffer) >= threshold_samples:
+                    self.transcribe_buffer()
+                
+                time.sleep(0.1)
+                
+            except Exception as e:
+                logging.error(f"Error in process_audio loop: {e}")
+                traceback.print_exc()
+                time.sleep(1)

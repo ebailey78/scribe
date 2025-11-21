@@ -1,0 +1,14 @@
+Listing all microphones (including loopback):
+[0] XV272U V3 (NVIDIA High Definition Audio) (Loopback: True)
+[1] XV272U V3 (NVIDIA High Definition Audio) (Loopback: True)
+[2] Speakers (Dell AC511 USB SoundBar) (Loopback: True)
+[3] DELL U2415 (NVIDIA High Definition Audio) (Loopback: True)
+[4] Anker PowerConf C300 (Anker PowerConf C300) (Loopback: False)
+[5] Stereo Mix (Realtek(R) Audio) (Loopback: False)
+[6] Line (Dell AC511 USB SoundBar) (Loopback: False)
+
+Default Speaker:
+Name: Speakers (Dell AC511 USB SoundBar)
+
+Testing find_default_loopback logic:
+MATCH FOUND: [2] Speakers (Dell AC511 USB SoundBar)
