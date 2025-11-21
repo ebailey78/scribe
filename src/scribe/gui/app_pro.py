@@ -12,6 +12,7 @@ import time
 # Import our scribe components from the package
 from scribe.core import SessionManager, AudioRecorder, Transcriber
 from scribe.synthesis import MeetingSynthesizer
+from scribe.utils.paths import get_sessions_dir
 
 class ScribeProGUI:
     def __init__(self):
@@ -544,6 +545,7 @@ class ScribeProGUI:
             
             menu = pystray.Menu(
                 item('Open Scribe', self.show_window),
+                item('Open Sessions Folder', self.open_sessions_folder),
                 item(
                     lambda text: "Stop Recording" if self.is_recording else "Start Recording",
                     self.toggle_recording
@@ -560,6 +562,16 @@ class ScribeProGUI:
                 on_activate=lambda icon: self.root.after(0, self.show_window)
             )
             threading.Thread(target=self.tray_icon.run, daemon=True).start()
+
+    def open_sessions_folder(self):
+        """Open the sessions directory in file explorer."""
+        try:
+            sessions_dir = get_sessions_dir()
+            if not os.path.exists(sessions_dir):
+                os.makedirs(sessions_dir)
+            os.startfile(sessions_dir)
+        except Exception as e:
+            print(f"Error opening sessions folder: {e}")
     
     def minimize_to_tray(self):
         """Minimize window to tray (hide it)."""

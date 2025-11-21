@@ -14,9 +14,40 @@ import time
 
 def gui_command(args):
     """Launch the GUI."""
-    from scribe.gui.app_pro import ScribeProGUI
-    app = ScribeProGUI()
-    app.run()
+    if args.blocking:
+        from scribe.gui.app_pro import ScribeProGUI
+        app = ScribeProGUI()
+        app.run()
+    else:
+        # Launch detached subprocess
+        import subprocess
+        import sys
+        import os
+        
+        # Use pythonw.exe on Windows to avoid console window
+        python_exe = sys.executable
+        if sys.platform == "win32":
+            pythonw = os.path.join(os.path.dirname(sys.executable), 'pythonw.exe')
+            if os.path.exists(pythonw):
+                python_exe = pythonw
+
+        cmd = [python_exe, "-m", "scribe.gui.app_pro"]
+        
+        kwargs = {}
+        if sys.platform == "win32":
+            # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+            # 0x00000008 | 0x00000200 | 0x08000000
+            kwargs.update(creationflags=0x00000008 | 0x00000200 | 0x08000000)
+            
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            close_fds=True,
+            **kwargs
+        )
+        print("Scribe GUI launched in background.")
 
 
 def record_command(args):
@@ -68,6 +99,7 @@ def main():
     
     # GUI command
     gui_parser = subparsers.add_parser('gui', help='Launch the GUI')
+    gui_parser.add_argument('--blocking', action='store_true', help='Run in current terminal (blocking)')
     gui_parser.set_defaults(func=gui_command)
     
     # Record command (CLI mode)
