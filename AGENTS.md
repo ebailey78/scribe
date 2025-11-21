@@ -256,6 +256,69 @@ git checkout src/scribe/core/transcriber.py
 2. Verify ConfigManager is initialized
 3. Check config key path: `self.config_manager.config.get("section", {}).get("key", default)`
 
+## Documentation Maintenance
+
+**CRITICAL:** Keep documentation synchronized with code changes.
+
+### Files to Update
+
+**README.md** - User-facing documentation
+- Update when adding/removing features
+- Update configuration examples
+- Update installation or usage instructions
+- Keep feature list current
+
+**AGENTS.md** - This file
+- Update architecture diagrams when structure changes
+- Add new lessons learned from bugs/issues
+- Update quick reference when classes/methods change
+- Document new patterns or anti-patterns discovered
+
+**pyproject.toml** - Project metadata and dependencies
+- **Add dependencies** when importing new libraries
+- **Increment version** following semantic versioning:
+  - `MAJOR.MINOR.PATCH` (e.g., `0.3.1`)
+  - MAJOR: Breaking changes (rare for this project)
+  - MINOR: New features, refactorings (e.g., `0.2.0` → `0.3.0`)
+  - PATCH: Bug fixes, small improvements (e.g., `0.3.0` → `0.3.1`)
+- Update project description if scope changes
+
+### When to Update Documentation
+
+**During Implementation:**
+- Add new dependencies to `pyproject.toml` immediately
+- Update README.md if user-facing features change
+- Update AGENTS.md if architecture/patterns change
+
+**After Completing Work:**
+- Review README.md for accuracy
+- Increment version in `pyproject.toml`
+- Update AGENTS.md with lessons learned
+- Check that all examples in docs still work
+
+### Version Increment Guidelines
+
+```bash
+# Bug fix or small improvement
+version = "0.3.1" → "0.3.2"
+
+# New feature (jargon config, context support)
+version = "0.3.2" → "0.4.0"
+
+# Major refactor (core module split)
+version = "0.4.0" → "0.5.0"
+
+# Breaking change (API change)
+version = "0.5.0" → "1.0.0"
+```
+
+**Example Commit Flow:**
+1. Make code changes
+2. Update README.md (if feature-related)
+3. Update AGENTS.md (if architecture/lessons)
+4. Increment version in `pyproject.toml`
+5. Commit with descriptive message
+
 ## Summary
 
 **Golden Rules:**
@@ -265,3 +328,4 @@ git checkout src/scribe/core/transcriber.py
 4. ✅ Use config values, don't hardcode
 5. ✅ Preserve thread-safe patterns
 6. ✅ When in doubt, git checkout and start fresh
+7. ✅ **Keep documentation and version current**
