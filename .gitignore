@@ -8,4 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
-sessions
+
+# Deprecated - sessions now in Documents/Scribe
+sessions/
+
+# Pycache in src
+src/**/__pycache__/

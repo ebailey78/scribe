@@ -9,8 +9,9 @@ from pystray import MenuItem as item
 import sys
 import time
 
-# Import our scribe components
-from scribe import SessionManager, AudioRecorder, Transcriber, MeetingSynthesizer
+# Import our scribe components from the package
+from scribe.core import SessionManager, AudioRecorder, Transcriber
+from scribe.synthesis import MeetingSynthesizer
 
 class ScribeProGUI:
     def __init__(self):
@@ -34,9 +35,14 @@ class ScribeProGUI:
         y = (screen_height - 100) // 2
         self.root.geometry(f"800x50+{x}+{y}")
         
-        # Set window icon
+        # Set window icon (navigate to project root from src/scribe/gui)
         try:
-            icon_path = os.path.join(os.path.dirname(__file__), "favicon.ico")
+            # Get project root: go up 3 levels from src/scribe/gui to root
+            gui_dir = os.path.dirname(os.path.abspath(__file__))
+            scribe_dir = os.path.dirname(gui_dir)  # src/scribe
+            src_dir = os.path.dirname(scribe_dir)  # src
+            project_root = os.path.dirname(src_dir)  # project root
+            icon_path = os.path.join(project_root, "favicon.ico")
             if os.path.exists(icon_path):
                 self.root.iconbitmap(icon_path)
         except Exception as e:
@@ -488,7 +494,13 @@ class ScribeProGUI:
             os.startfile(self.final_notes_path)
     
     def create_icon(self, color="gray", show_recording_indicator=False):
-        icon_path = os.path.join(os.path.dirname(__file__), "favicon.ico")
+        # Get project root path
+        gui_dir = os.path.dirname(os.path.abspath(__file__))
+        scribe_dir = os.path.dirname(gui_dir)
+        src_dir = os.path.dirname(scribe_dir)
+        project_root = os.path.dirname(src_dir)
+        icon_path = os.path.join(project_root, "favicon.ico")
+        
         try:
             if os.path.exists(icon_path):
                 image = Image.open(icon_path)
@@ -545,7 +557,7 @@ class ScribeProGUI:
                 icon_image, 
                 "Scribe Recorder", 
                 menu,
-                on_activate=lambda: self.root.after(0, self.show_window)
+                on_activate=lambda icon: self.root.after(0, self.show_window)
             )
             threading.Thread(target=self.tray_icon.run, daemon=True).start()
     
@@ -555,8 +567,10 @@ class ScribeProGUI:
     
     def show_window(self):
         self.root.deiconify()
+        self.root.attributes("-topmost", True)
         self.root.lift()
         self.root.focus_force()
+        self.root.attributes("-topmost", False)
     
     def quit_app(self):
         """Quit the application safely."""

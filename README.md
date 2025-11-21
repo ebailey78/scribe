@@ -4,7 +4,7 @@ A professional real-time system audio transcription tool for Windows with AI-pow
 
 ## ✨ Features
 
-### 🎨 Professional GUI (`app_pro.py`)
+### 🎨 Professional GUI
 - **LCD-Style Interface**: Compact 800x50px horizontal bar with cyan backlit aesthetic
 - **Real-Time Waveform**: Animated 60-bar spectrum analyzer showing audio levels
 - **Seven-Segment Timer**: Retro digital display with Courier New monospace font
@@ -30,7 +30,7 @@ A professional real-time system audio transcription tool for Windows with AI-pow
 - **Soft Pause**: Pause/resume recording without stopping transcription
 - **Progress Tracking**: Visual progress bar for synthesis stages
 - **Auto-Open**: Automatically opens completed notes in your default markdown editor
-- **Session Management**: Organized folders with timestamps (`sessions/YYYY-MM-DD_HH-MM-SS/`)
+- **Session Management**: Organized folders in `Documents/Scribe/sessions/`
 - **Audio Archival**: Saves audio chunks for reference
 
 ## 📋 Prerequisites
@@ -54,16 +54,18 @@ A professional real-time system audio transcription tool for Windows with AI-pow
    ```
 
 3. **(Optional) Configure Logseq**:
-   - Edit `scribe.py` and set `LOGSEQ_GRAPH_PATH` to your Logseq graph directory
+   - Edit `src/scribe/synthesis.py` and set `LOGSEQ_GRAPH_PATH` to your Logseq graph directory
    - Example: `LOGSEQ_GRAPH_PATH = r"C:\Users\YourName\Documents\Logseq\YourGraph\pages"`
 
 ## 💻 Usage
 
-### GUI Mode - Professional Interface (Recommended)
+### GUI Mode (Recommended)
 
 **Launch the app**:
 ```powershell
-python app_pro.py
+scribe
+# OR
+scribe gui
 ```
 
 **Controls**:
@@ -87,47 +89,45 @@ python app_pro.py
 - **Right-click**: Menu with "Start/Stop Recording" and "Quit"
 - **Recording Indicator**: Green dot appears on icon when recording
 
-### GUI Mode - Simple Interface
-
-**Launch the basic GUI**:
-```powershell
-python app.py
-```
-
-Features a traditional vertical layout with larger buttons and status text.
-
 ### CLI Mode
 
 **For headless or scripted use**:
 ```powershell
-python scribe.py
+scribe record
+# OR
+scribe record --manual
 ```
 
 1. Select your audio output device from the list (look for `(Loopback)`)
 2. Recording starts automatically
 3. View real-time transcription in console
 4. Press `Ctrl+C` to stop and trigger synthesis
-5. Find output in `sessions/{timestamp}/`
+5. Find output in `Documents/Scribe/sessions/{timestamp}/`
 
 ## 📁 Output Structure
 
+Your sessions are saved to your Documents folder:
 ```
-sessions/
-└── 2025-11-20_19-30-45/
-    ├── 2025-11-20_Project_Planning_Discussion.md  # Final synthesized notes
-    ├── transcript_full.txt                         # Raw transcription
-    ├── notes_logseq.md                            # Logseq export
-    └── audio_chunks/
-        ├── chunk_001.wav
-        ├── chunk_002.wav
-        └── ...
+Documents/
+└── Scribe/
+    ├── logs/
+    │   └── scribe_2025-11-20.log
+    └── sessions/
+        └── 2025-11-20_19-30-45/
+            ├── 2025-11-20_Project_Planning_Discussion.md  # Final synthesized notes
+            ├── transcript_full.txt                         # Raw transcription
+            ├── notes_logseq.md                            # Logseq export
+            └── audio_chunks/
+                ├── chunk_001.wav
+                ├── chunk_002.wav
+                └── ...
 ```
 
 ## ⚙️ Configuration
 
 ### Adjusting Auto-Stop Sensitivity
 
-Edit `scribe.py`, `Transcriber class`, line ~146:
+Edit `src/scribe/core.py`, `Transcriber class`:
 ```python
 self.silence_threshold = 0.01      # Volume threshold (lower = more sensitive)
 self.max_silence_duration = 60.0   # Seconds of silence before auto-stop
@@ -139,12 +139,11 @@ In `Transcriber.__init__()`:
 ```python
 self.min_duration = 50     # Minimum chunk duration (seconds)
 self.max_duration = 90     # Maximum chunk duration (seconds)
-self.buffer_duration_limit = 30  # Real-time buffer size (seconds)
 ```
 
 ### Logseq Integration
 
-Set your Logseq graph path in `scribe.py`:
+Set your Logseq graph path in `src/scribe/synthesis.py`:
 ```python
 LOGSEQ_GRAPH_PATH = r"C:\path\to\your\Logseq\graph\pages"
 ```
@@ -183,12 +182,14 @@ LOGSEQ_GRAPH_PATH = r"C:\path\to\your\Logseq\graph\pages"
 ### Project Structure
 ```
 scribe/
-├── app_pro.py              # Professional LCD-style GUI
-├── app.py                  # Simple traditional GUI
-├── scribe.py               # Core engine (CLI + backend)
-├── pyproject.toml          # Dependencies
-├── sessions/               # Output directory
-└── README.md              # This file
+├── src/scribe/          # Main package
+│   ├── core.py          # SessionManager, AudioRecorder, Transcriber
+│   ├── synthesis.py     # MeetingSynthesizer AI logic
+│   ├── gui/app_pro.py   # Professional GUI
+│   └── utils/           # paths.py, logging.py
+├── scripts/             # Launcher scripts
+├── pyproject.toml       # Dependencies & Entry Points
+└── README.md           # This file
 ```
 
 ### Key Components
@@ -196,13 +197,6 @@ scribe/
 - **AudioRecorder**: WASAPI loopback capture with pause/resume
 - **Transcriber**: Whisper transcription with VAD and smart chunking
 - **MeetingSynthesizer**: AI-powered summary and note generation
-
-## 📝 Notes
-
-- **First Run**: Model download (~140MB) happens automatically
-- **GPU Memory**: Requires ~2GB VRAM for medium Whisper model
-- **CPU Fallback**: Works on CPU-only systems (slower transcription)
-- **Privacy**: All processing is local - no cloud services used
 
 ## 📄 License
 
