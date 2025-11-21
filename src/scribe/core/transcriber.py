@@ -138,7 +138,11 @@ class Transcriber:
             num_samples = int(len(self.buffer) * self.target_sample_rate / self.native_sample_rate)
             audio_to_transcribe = scipy.signal.resample(self.buffer, num_samples)
 
-        initial_prompt = "Healthcare finance meeting. Keywords: EBITDA, HEDIS, EHR, ICD-10, Oncology, Utilization Review, CPT-88305, ROI, YoY."
+        # Load custom jargon for Whisper prompt
+        initial_prompt = self.load_jargon()
+        if not initial_prompt:
+            # Fallback to simple prompt if no jargon configured
+            initial_prompt = "Meeting transcript."
         
         try:
             segments, info = self.model.transcribe(

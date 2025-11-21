@@ -4,6 +4,7 @@ import threading
 import os
 import math
 import random
+from pathlib import Path
 from PIL import Image, ImageDraw
 import pystray
 from pystray import MenuItem as item
@@ -215,13 +216,13 @@ class ScribeProGUI:
         # Create a small popup window
         self.settings_window = ctk.CTkToplevel(self.root)
         self.settings_window.title("Settings")
-        self.settings_window.geometry("300x150")
+        self.settings_window.geometry("300x180")
         self.settings_window.resizable(False, False)
         self.settings_window.attributes("-topmost", True)
         
         # Center relative to main window
         x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 150
-        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 75
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 90
         self.settings_window.geometry(f"+{x}+{y}")
         
         # Label
