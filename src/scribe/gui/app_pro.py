@@ -345,9 +345,11 @@ class ScribeProGUI:
             
             self.waveform_canvas.delete("all")
             
-            # Update audio level
+            # Update audio level using live recorder level to avoid pauses during chunking
             target_level = 0.0
-            if self.transcriber and hasattr(self.transcriber, 'buffer') and len(self.transcriber.buffer) > 0:
+            if self.recorder and hasattr(self.recorder, "latest_level"):
+                target_level = min(1.0, max(0.0, self.recorder.latest_level * 4))
+            elif self.transcriber and hasattr(self.transcriber, 'buffer') and len(self.transcriber.buffer) > 0:
                 recent_samples = self.transcriber.buffer[-4800:]
                 if len(recent_samples) > 0:
                     target_level = min(1.0, max(0.0, abs(recent_samples.max()) * 8))
@@ -442,20 +444,11 @@ class ScribeProGUI:
             
             self.session = SessionManager()
             self.recorder = AudioRecorder()
-            import soundcard as sc
-            mics = sc.all_microphones(include_loopback=True)
-            idx, default_mic = self.recorder.find_default_loopback(mics)
+            self.recorder.select_device(manual_mode=False)
             
-            if default_mic:
-                self.recorder.mic = default_mic
-            else:
-                for mic in mics:
-                    if mic.isloopback:
-                        self.recorder.mic = mic
-                        break
-            
-            if not self.recorder.mic:
-                print("No Device!")
+            if not self.recorder.loopback_device:
+                print("No loopback device found!")
+                self.status_label.configure(text="No device", text_color="#FFA500")
                 return
             
             self.transcriber = Transcriber(
