@@ -156,6 +156,11 @@ If auto-stop triggered → call auto_stop_callback()
 - **Atomic Commits:** "Fix login bug" is better than "Fix login, update readme, and refactor core".
 - **Descriptive Messages:** Explain *why* a change was made, not just *what*.
 
+**4. Task Initiation**
+- **Clarify First:** Before writing code, explicitly ask about any ambiguities or uncertainties.
+- **Review Context:** Read relevant existing code to understand the request's impact and ramifications.
+- **Safety Check:** It is the **agent's responsibility** to warn the user about dangerous, unwise, or anti-pattern requests. Do not blindly follow instructions that will degrade the codebase.
+
 ## Development Workflow
 
 ### Making Changes
