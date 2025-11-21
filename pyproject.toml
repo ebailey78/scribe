@@ -24,6 +24,7 @@ dependencies = [
     "customtkinter>=5.2.2",
     "pystray>=0.19.5",
     "pillow>=12.0.0",
+    "PyYAML>=6.0",
 ]
 
 [project.scripts]

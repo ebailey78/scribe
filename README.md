@@ -13,23 +13,6 @@ A professional real-time system audio transcription tool for Windows with AI-pow
 - **Always Visible**: Shows in both taskbar and system tray
 
 ### 🎙️ Audio Capture & Transcription
-- **WASAPI Loopback**: Captures system audio from any output device (speakers, headphones)
-- **GPU Acceleration**: Fully optimized for NVIDIA GPUs using CUDA 12 & cuDNN 9
-- **Smart Segmentation**: VAD-based chunking with ~60-second intervals for optimal transcription
-- **Auto-Stop Detection**: Automatically ends recording after prolonged silence
-- **Native Sample Rate Support**: Handles any device sample rate (44.1kHz, 48kHz, etc.)
-
-### 🤖 AI-Powered Synthesis
-- **Executive Summary**: Concise overview of meeting content
-- **Dynamic Titles**: AI-generated meeting titles based on content
-- **Time-Based Notes**: Detailed notes with timestamp headers for each discussion segment
-- **Logseq Export**: Automatic export to Logseq knowledge base (if configured)
-- **Markdown Output**: Clean, organized markdown files with proper formatting
-
-### ⚡ Smart Features
-- **Soft Pause**: Pause/resume recording without stopping transcription
-- **Progress Tracking**: Visual progress bar for synthesis stages
-- **Auto-Open**: Automatically opens completed notes in your default markdown editor
 - **Session Management**: Organized folders in `Documents/Scribe/sessions/`
 - **Audio Archival**: Saves audio chunks for reference
 
@@ -125,27 +108,43 @@ Documents/
 
 ## ⚙️ Configuration
 
-### Adjusting Auto-Stop Sensitivity
+Scribe uses a YAML configuration file located at `Documents/Scribe/config/config.yaml`. This file is automatically created when you first open the settings.
 
-Edit `src/scribe/core.py`, `Transcriber class`:
-```python
-self.silence_threshold = 0.01      # Volume threshold (lower = more sensitive)
-self.max_silence_duration = 60.0   # Seconds of silence before auto-stop
+### Accessing Settings
+1.  Click the **Settings (Cog)** icon in the app.
+2.  Choose **Edit Config (YAML)** to open the configuration file.
+3.  Choose **Edit Jargon List** to manage custom vocabulary.
+4.  Choose **Edit Context (Markdown)** to provide background information for the AI.
+
+### Configuration Options (`config.yaml`)
+
+```yaml
+transcription:
+  min_duration: 60          # Minimum chunk duration (seconds)
+  max_duration: 90          # Maximum chunk duration (seconds)
+  silence_threshold: 0.01   # Volume threshold (lower = more sensitive)
+  silence_duration: 0.5     # Seconds of silence required to cut
+  max_silent_chunks: 1      # Stop after N silent chunks
+  silence_chunk_threshold: 0.005
+
+synthesis:
+  ollama_model: "qwen3:8b"  # LLM model to use (must be pulled in Ollama)
+  logseq_graph_path: ""     # Path to Logseq pages folder (optional)
 ```
 
-### VAD & Chunking Parameters
-
-In `Transcriber.__init__()`:
-```python
-self.min_duration = 50     # Minimum chunk duration (seconds)
-self.max_duration = 90     # Maximum chunk duration (seconds)
-```
+### Context Configuration (`context.md`)
+You can provide free-form context to help the AI understand your environment. This file is located at `Documents/Scribe/config/context.md`.
+Use it to list:
+- Team members and roles
+- Current project names and descriptions
+- Specific acronyms or terminology definitions
+- Meeting goals or preferences
 
 ### Logseq Integration
-
-Set your Logseq graph path in `src/scribe/synthesis.py`:
-```python
-LOGSEQ_GRAPH_PATH = r"C:\path\to\your\Logseq\graph\pages"
+To enable Logseq export, set the path in `config.yaml`:
+```yaml
+synthesis:
+  logseq_graph_path: "C:/Users/YourName/Documents/Logseq/pages"
 ```
 
 ## 🎯 Use Cases

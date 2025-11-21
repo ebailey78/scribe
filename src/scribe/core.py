@@ -183,6 +183,8 @@ class AudioRecorder:
             self.thread.join(timeout=1)
 
 
+from scribe.utils.config import ConfigManager
+
 class Transcriber:
     """Transcribes audio in real-time using Whisper with smart segmentation."""
     
@@ -191,17 +193,21 @@ class Transcriber:
         self.model = None
         self.buffer = np.array([], dtype='float32')
         
-        # Smart Segmentation Parameters
-        self.min_duration = 60  # Don't cut before this (~1 min target)
-        self.max_duration = 90  # Force cut if no silence found
-        self.silence_threshold = 0.01  # RMS amplitude threshold
-        self.silence_duration = 0.5  # How long silence must last
+        # Load configuration
+        self.config_manager = ConfigManager()
+        self.vad_config = self.config_manager.config.get("transcription", {})
+        
+        # Smart Segmentation Parameters (from config)
+        self.min_duration = self.vad_config.get("min_duration", 60)
+        self.max_duration = self.vad_config.get("max_duration", 90)
+        self.silence_threshold = self.vad_config.get("silence_threshold", 0.01)
+        self.silence_duration = self.vad_config.get("silence_duration", 0.5)
         
         # Auto-stop detection
         self.auto_stop_callback = auto_stop_callback
         self.silent_chunks_count = 0
-        self.silence_chunk_threshold = 0.005  # Very low amplitude = silence
-        self.max_silent_chunks = 1  # Stop after 1 full silent chunk (60-90s)
+        self.silence_chunk_threshold = self.vad_config.get("silence_chunk_threshold", 0.005)
+        self.max_silent_chunks = self.vad_config.get("max_silent_chunks", 1)
         
         self.native_sample_rate = native_sample_rate
         self.target_sample_rate = 16000
@@ -214,68 +220,42 @@ class Transcriber:
         print(f"{Fore.CYAN}Loading Whisper model...{Style.RESET_ALL}")
         try:
             # Try CUDA first
-            self.model = WhisperModel("small.en", device="cuda", compute_type="float16")
+            self.model = WhisperModel("medium.en", device="cuda", compute_type="float16")
             print(f"{Fore.GREEN}Model loaded on GPU (CUDA).{Style.RESET_ALL}")
         except Exception as e:
             print(f"{Fore.YELLOW}CUDA failed ({e}), falling back to CPU...{Style.RESET_ALL}")
             try:
-                self.model = WhisperModel("small.en", device="cpu", compute_type="int8")
+                self.model = WhisperModel("medium.en", device="cpu", compute_type="int8")
                 print(f"{Fore.GREEN}Model loaded on CPU.{Style.RESET_ALL}")
             except Exception as e2:
                 print(f"{Fore.RED}Critical Error: Could not load model: {e2}{Style.RESET_ALL}")
                 sys.exit(1)
 
-    def calculate_rms(self, audio_chunk):
-        """Calculate RMS (Root Mean Square) amplitude of audio chunk."""
-        return np.sqrt(np.mean(audio_chunk**2))
-
-    def detect_silence(self):
-        """Check if the last silence_duration seconds of buffer are silent."""
-        silence_samples = int(self.silence_duration * self.native_sample_rate)
-        
-        if len(self.buffer) < silence_samples:
-            return False
-        
-        tail = self.buffer[-silence_samples:]
-        rms = self.calculate_rms(tail)
-        return rms < self.silence_threshold
-
-    def process_audio(self):
-        """Main processing loop."""
-        print(f"{Fore.CYAN}Transcriber started. Waiting for audio...{Style.RESET_ALL}")
-        while True:
-            try:
-                data = self.queue.get(timeout=1)
-                data = data.flatten()
-                self.buffer = np.concatenate((self.buffer, data))
+    def load_jargon(self):
+        """Load custom jargon from config file."""
+        try:
+            config_dir = get_config_dir()
+            jargon_file = config_dir / "jargon.txt"
+            
+            if not jargon_file.exists():
+                return ""
                 
-                current_duration = len(self.buffer) / self.native_sample_rate
+            with open(jargon_file, "r", encoding="utf-8") as f:
+                lines = [line.strip() for line in f.readlines()]
+            
+            # Filter comments and empty lines
+            terms = [line for line in lines if line and not line.startswith("#")]
+            
+            if not terms:
+                return ""
                 
-                # Smart Segmentation Logic
-                if current_duration < self.min_duration:
-                    # Keep buffering
-                    continue
-                elif current_duration >= self.min_duration and current_duration < self.max_duration:
-                    # Hunt for silence
-                    if self.detect_silence():
-                        print(f"{Fore.CYAN}[Smart Cut] Silence detected at {current_duration:.1f}s{Style.RESET_ALL}")
-                        self.transcribe_buffer()
-                else:
-                    # Force cut at max_duration
-                    print(f"{Fore.YELLOW}[Force Cut] Max duration reached at {current_duration:.1f}s{Style.RESET_ALL}")
-                    self.transcribe_buffer()
-                    
-            except queue.Empty:
-                continue
-            except Exception as e:
-                print(f"{Fore.RED}Error in processing loop: {e}{Style.RESET_ALL}")
-                traceback.print_exc()
-
-    def save_audio_chunk(self, audio_data):
-        """Save the current audio buffer to a WAV file."""
-        filename = os.path.join(self.session.audio_dir, f"chunk_{self.chunk_counter:03d}.wav")
-        sf.write(filename, audio_data, self.native_sample_rate)
-        self.chunk_counter += 1
+            jargon_string = ", ".join(terms)
+            print(f"Loaded jargon: {jargon_string}")
+            return f"Context: Business meeting. Custom Vocabulary: {jargon_string}."
+            
+        except Exception as e:
+            print(f"Error loading jargon: {e}")
+            return ""
 
     def transcribe_buffer(self):
         """Transcribe the current audio buffer."""
