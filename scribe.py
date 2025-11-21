@@ -1,6 +1,8 @@
 import os
 import sys
 import argparse
+import logging
+from pathlib import Path
 
 # Add NVIDIA cuDNN and cuBLAS to PATH for CUDA support
 # This must be done BEFORE importing ctranslate2 or faster_whisper
@@ -49,6 +51,34 @@ warnings.filterwarnings("ignore", message=".*pkg_resources.*")
 # Initialize colorama
 init(autoreset=True)
 
+# Get Scribe data directory in user's Documents folder
+def get_scribe_dir():
+    """Get the Scribe data directory in Documents folder."""
+    docs = Path.home() / "Documents"
+    scribe_dir = docs / "Scribe"
+    return scribe_dir
+
+# Setup logging
+def setup_logging():
+    """Configure logging to file in Scribe directory."""
+    scribe_dir = get_scribe_dir()
+    log_dir = scribe_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    
+    log_file = log_dir / f"scribe_{datetime.now().strftime('%Y-%m-%d')}.log"
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler()  # Minimal console output
+        ]
+    )
+    return logging.getLogger(__name__)
+
+logger = setup_logging()
+
 # Configuration: Logseq Graph Path
 # Set this to your Logseq pages folder, e.g., r"C:\Users\YourName\Logseq\pages"
 LOGSEQ_GRAPH_PATH = r"C:\Users\idemr\Logseq\pages"  # Update this path!
@@ -56,7 +86,12 @@ LOGSEQ_GRAPH_PATH = r"C:\Users\idemr\Logseq\pages"  # Update this path!
 class SessionManager:
     def __init__(self):
         self.session_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.base_dir = os.path.join("sessions", self.session_id)
+        
+        # Use Documents/Scribe instead of local ./sessions
+        scribe_dir = get_scribe_dir()
+        sessions_root = scribe_dir / "sessions"
+        
+        self.base_dir = str(sessions_root / self.session_id)
         self.audio_dir = os.path.join(self.base_dir, "audio_chunks")
         self.transcript_raw = os.path.join(self.base_dir, "transcript_full.txt")
         self.transcript_logseq = os.path.join(self.base_dir, "notes_logseq.md")
@@ -64,6 +99,12 @@ class SessionManager:
         # Create directories
         os.makedirs(self.audio_dir, exist_ok=True)
         
+        # Log to file instead of printing
+        logger.info(f"Session Started: {self.session_id}")
+        logger.info(f"Session Directory: {self.base_dir}")
+        logger.info(f"Audio Storage: {self.audio_dir}")
+        
+        # Minimal console output
         print(f"{Fore.MAGENTA}=== Session Started: {self.session_id} ==={Style.RESET_ALL}")
         print(f"{Fore.CYAN}Session Directory: {self.base_dir}{Style.RESET_ALL}")
         print(f"{Fore.CYAN}Audio Storage: {self.audio_dir}{Style.RESET_ALL}")
