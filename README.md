@@ -32,18 +32,46 @@ A real-time system audio transcription tool for Windows, powered by `faster-whis
 
 ## Usage
 
+### GUI Mode (Recommended)
+
+1. Launch the GUI application:
+   ```powershell
+   python app.py
+   ```
+
+2. Click **START** to begin recording (auto-selects your default speaker's loopback).
+
+3. The app will:
+   - 🔴 Show "Recording" status
+   - Transcribe audio in real-time
+   - Save audio chunks to `sessions/{timestamp}/audio_chunks/`
+
+4. Click **STOP** or press `Ctrl+C` to finish.
+
+5. AI synthesis will automatically start:
+   - Generates executive summary
+   - Creates dynamic meeting title
+   - Processes blocks with time-based headers
+   - Exports to Logseq (if configured)
+
+6. Click **"Open Notes in Logseq"** when complete.
+
+**System Tray:** Click "Minimize to Tray" to run in background. The icon turns red while recording.
+
+### CLI Mode
+
 1. Run the tool:
    ```powershell
-   uv run python scribe.py
+   python scribe.py
    ```
 
 2. Select your audio output device from the list (look for `(Loopback)`).
 
 3. The tool will start recording. Any audio playing through that device (meetings, videos, etc.) will be transcribed.
 
-4. View the output in real-time in the console or open `meeting_notes.md`.
+4. View the output in real-time in the console or open `sessions/{timestamp}/transcript_full.txt`.
 
-5. Press `Ctrl+C` to stop.
+5. Press `Ctrl+C` to stop and trigger AI synthesis.
 
 ## Troubleshooting
 

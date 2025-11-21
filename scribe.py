@@ -44,6 +44,7 @@ import scipy.signal
 # Suppress pkg_resources deprecation warning from ctranslate2
 warnings.filterwarnings("ignore", category=UserWarning, module="ctranslate2")
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*pkg_resources.*")
 
 # Initialize colorama
 init(autoreset=True)
@@ -75,6 +76,15 @@ class AudioRecorder:
         self.channels = 1
         self.mic = None
         self.running = False
+        self.paused = False  # New: soft pause state
+        
+    def pause(self):
+        """Pause recording (keeps stream alive)."""
+        self.paused = True
+    
+    def resume(self):
+        """Resume recording."""
+        self.paused = False
 
     def find_default_loopback(self, mics):
         """Try to find the loopback device corresponding to the system default speaker."""
@@ -130,7 +140,9 @@ class AudioRecorder:
                 print(f"{Fore.GREEN}Recording started at {self.native_sample_rate} Hz...{Style.RESET_ALL}")
                 while self.running:
                     data = recorder.record(numframes=4800)
-                    self.q.put(data)
+                    # Soft pause: skip processing but keep stream alive
+                    if not self.paused:
+                        self.q.put(data)
         except Exception as e:
             print(f"{Fore.RED}Recording error: {e}{Style.RESET_ALL}")
             traceback.print_exc()
@@ -147,7 +159,7 @@ class AudioRecorder:
             self.thread.join(timeout=1)
 
 class Transcriber:
-    def __init__(self, recorder_queue, native_sample_rate, session_manager):
+    def __init__(self, recorder_queue, native_sample_rate, session_manager, auto_stop_callback=None):
         self.queue = recorder_queue
         self.model = None
         self.buffer = np.array([], dtype='float32')
@@ -156,7 +168,13 @@ class Transcriber:
         self.min_duration = 60  # Don't cut before this (~1 min target)
         self.max_duration = 90  # Force cut if no silence found
         self.silence_threshold = 0.01  # RMS amplitude threshold
-        self.silence_duration = 0.25  # How long silence must last
+        self.silence_duration = 0.5  # How long silence must last
+        
+        # Auto-stop detection
+        self.auto_stop_callback = auto_stop_callback
+        self.silent_chunks_count = 0
+        self.silence_chunk_threshold = 0.005  # Very low amplitude = silence
+        self.max_silent_chunks = 1  # Stop after 1 full silent chunk (60-90s)
         
         self.native_sample_rate = native_sample_rate
         self.target_sample_rate = 16000
@@ -237,6 +255,22 @@ class Transcriber:
 
         max_amp = np.max(np.abs(self.buffer))
         print(f"{Fore.YELLOW}Processing {len(self.buffer)/self.native_sample_rate:.1f}s of audio... (Max Amp: {max_amp:.4f}){Style.RESET_ALL}")
+
+        # Check if entire chunk is silent (meeting ended)
+        if max_amp < self.silence_chunk_threshold:
+            self.silent_chunks_count += 1
+            print(f"{Fore.YELLOW}⚠️  Silent chunk detected ({self.silent_chunks_count}/{self.max_silent_chunks}){Style.RESET_ALL}")
+            
+            if self.silent_chunks_count >= self.max_silent_chunks:
+                print(f"{Fore.CYAN}🔚 Auto-stop: Detected end of meeting (silent audio){Style.RESET_ALL}")
+                # Clear buffer and trigger callback
+                self.buffer = np.array([], dtype='float32')
+                if self.auto_stop_callback:
+                    self.auto_stop_callback()
+                return
+        else:
+            # Reset counter if we get audio
+            self.silent_chunks_count = 0
 
         # Save audio chunk before processing
         self.save_audio_chunk(self.buffer)
