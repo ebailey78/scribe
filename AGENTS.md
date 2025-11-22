@@ -1,331 +1,498 @@
-# AGENTS.md - Development Guide for AI Agents
+# AGENTS.md — Engineering Guide for Autonomous Coding Agents
 
-This document provides guidance for AI agents working on the Scribe project, including architecture overview, development strategies, and lessons learned from past issues.
+This document defines how AI agents must operate when modifying the Scribe codebase. It encodes architectural invariants, safe‑editing rules, workflows, and recovery procedures. The goal is simple: **agents must never degrade the stability, performance, or architecture of Scribe.**
 
-## Project Overview
+---
 
-**Scribe** is a real-time audio transcription application that captures system audio, transcribes it using OpenAI's Whisper model, and generates meeting notes using local LLMs via Ollama.
+# 1. Purpose & Scope
 
-### Key Features
-- System audio capture via WASAPI loopback
-- Real-time transcription with Whisper (CUDA/CPU)
-- Smart audio segmentation with pause detection
-- AI-powered meeting synthesis with Ollama
-- Logseq integration for note management
-- Configurable vocabulary (jargon) and context
+This guide exists to guarantee **predictable, safe, reversible edits** when autonomous agents modify Scribe. It establishes:
 
-## Architecture
+* How to reason about changes
+* What architectural rules can never be violated
+* Required editing workflows
+* Error‑recovery mechanisms
+* Module‑level interfaces and expectations
 
-### Directory Structure
-```
-scribe/
-├── src/scribe/
-│   ├── core/                    # Core functionality (modular)
-│   │   ├── __init__.py         # CUDA setup, exports
-│   │   ├── session.py          # SessionManager
-│   │   ├── recorder.py         # AudioRecorder
-│   │   └── transcriber.py      # Transcriber
-│   ├── gui/
-│   │   └── app_pro.py          # GUI application
-│   ├── utils/
-│   │   ├── config.py           # ConfigManager
-│   │   ├── paths.py            # Path utilities
-│   │   └── logging.py          # Logging setup
-│   ├── synthesis.py            # MeetingSynthesizer
-│   ├── cli.py                  # CLI commands
-│   └── __init__.py
-├── config/                      # Default config templates
-│   ├── jargon.txt
-│   └── context_template.md
-└── pyproject.toml
-```
+It is written for:
 
-### User Config Location
-```
-Documents/Scribe/
-├── config/
-│   ├── config.yaml
-│   ├── jargon.txt
-│   └── context.md
-└── sessions/
-    └── {session-id}/
-        ├── audio_chunks/
-        ├── transcript_full.txt
-        └── notes.md
-```
+* AI coding agents performing code modifications
+* Human maintainers reviewing agent output
 
-## Critical Lessons Learned
+---
 
-### 1. File Size and Editing Safety
+# 2. Mental Model: How Scribe Works
 
-**❌ PROBLEM:** The original `core.py` was monolithic (~375 lines) containing SessionManager, AudioRecorder, and Transcriber. When editing one class, agents accidentally:
-- Deleted critical methods (`process_audio`, `save_audio_chunk`)
-- Corrupted unrelated code in the same file
-- Forgot to add required imports (`logging`)
+Scribe is a real‑time transcription + post‑processing application built around three pillars:
 
-**✅ SOLUTION:** Refactored into modular `core/` package with separate files:
-- `core/session.py` - SessionManager (45 lines)
-- `core/recorder.py` - AudioRecorder (118 lines)  
-- `core/transcriber.py` - Transcriber (229 lines)
-- `core/__init__.py` - CUDA setup and exports
+1. **Audio ingestion** via WASAPI loopback
+2. **Transcription & segmentation** via `faster-whisper`
+3. **Meeting synthesis** using local LLMs (via Ollama)
 
-**GUIDELINE:** Keep files focused and small. Each file should have ONE primary responsibility.
-
-### 2. Editing Best Practices
-
-**❌ ANTI-PATTERNS:**
-- Using `multi_replace_file_content` on large files with many changes
-- Making changes to multiple unrelated sections of a file in one edit
-- Not verifying the full context before/after target content
-
-**✅ BEST PRACTICES:**
-- **View before edit:** Always view the exact lines you're editing first
-- **Small, focused edits:** One logical change per edit operation
-- **Verify imports:** After adding code that uses a library, check imports
-- **Test immediately:** Run verification after each significant change
-- **Use git checkout:** When file gets corrupted, restore and start over
-
-### 3. CUDA Setup Requirement
-
-**CRITICAL:** CUDA DLLs must be added to PATH **before** importing `ctranslate2` or `faster_whisper`.
-
-This is why `core/__init__.py` exists - it ensures CUDA setup happens first, then imports the classes that depend on it.
-
-**DO NOT** move CUDA setup code out of `__init__.py` or remove it.
-
-### 4. Configuration System
-
-The app uses a layered configuration approach:
-
-1. **Default values** - Hardcoded in ConfigManager
-2. **config.yaml** - User overrides in `Documents/Scribe/config/`
-3. **Runtime values** - Loaded at init time
-
-**Key config values:**
-```yaml
-transcription:
-  min_duration: 60              # Min seconds before chunking
-  max_duration: 90              # Force chunk at this duration
-  silence_threshold: 0.01       # Amplitude for pause detection
-  silence_duration: 0.5         # Silence window to check
-  max_silent_chunks: 1          # Auto-stop after N silent chunks
-  silence_chunk_threshold: 0.005 # Amplitude for auto-stop
-```
-
-**IMPORTANT:** The smart pause detection uses `silence_threshold` and `silence_duration` for **intra-chunk** pause detection (finding natural breaks). The `silence_chunk_threshold` and `max_silent_chunks` are for **auto-stop** detection (ending the recording).
-
-### 5. Audio Processing Flow
+The pipeline is threaded and modular:
 
 ```
-AudioRecorder.record_loop()
-    ↓ (puts data in queue)
-    
-Transcriber.process_audio()  [runs in thread]
-    ↓ (moves queue → buffer)
-    
-Smart Pause Detection:
-  - Wait for min_duration (60s)
-  - Look for silence_threshold in last silence_duration
-  - OR force at max_duration (90s)
-    ↓
-    
-Transcriber.transcribe_buffer()
-  - Save audio chunk to WAV
-  - Resample if needed
-  - Run Whisper transcription
-  - Save to transcript files
-  - Check for auto-stop (silent chunks)
-    ↓
-    
-If auto-stop triggered → call auto_stop_callback()
+AudioRecorder → Queue → Transcriber → transcript_full.txt → MeetingSynthesizer
 ```
 
-## Development Workflow
+Every agent edit must preserve this flow.
 
-### Making Changes
+---
 
-1. **Understand the change:**
-   - Read the user request carefully
-   - Identify which module(s) are affected
-   - Check if config values are involved
+# 3. Non‑Negotiable Architectural Invariants
 
-2. **Plan the edit:**
-   - Create implementation plan if complex
-   - Identify exact files and methods to modify
-   - Consider backward compatibility
+Breaking any of these invariants is considered a critical failure.
 
-3. **Execute safely:**
-   - View the exact section before editing
-   - Make focused, minimal edits
-   - Verify imports after adding new functionality
-   - Test immediately after changes
+## 3.1 CUDA Initialization Order
 
-4. **Verify:**
-   - Test imports: `uv run python -c "from scribe.core import ..."`
-   - Test CLI: `uv run scribe record` (short test with audio)
-   - Test GUI: `uv run scribe gui`
-   - Check config loading if config-related
+* CUDA DLL setup **must occur before** any import of `ctranslate2` or `faster_whisper`.
+* This logic **must remain** in `core/__init__.py`.
 
-### Testing
+## 3.2 Thread Model
 
-**Quick Import Test:**
-```bash
-uv run python -c "from scribe.core import SessionManager, AudioRecorder, Transcriber; print('✅ OK')"
+* AudioRecorder runs in a **daemon thread**.
+* Transcriber runs in a **daemon thread**.
+* They communicate **only** via a `queue.Queue`.
+* Agents must not introduce shared mutable state between them.
+
+## 3.3 Config Access Pattern
+
+* All config values must come from `ConfigManager`.
+* No hardcoded thresholds.
+* Never invent new config keys unless explicitly requested.
+
+## 3.4 Session Directory Contract
+
+Each recording session **must** generate:
+
+```
+<session>/audio_chunks/*.wav
+<session>/transcript_full.txt
+<session>/notes_logseq.md
 ```
 
-**CLI Recording Test:**
-```bash
+Paths come **only** from `SessionManager`.
+
+## 3.5 MeetingSynthesizer Contract
+
+* Must read `transcript_full.txt` exactly
+* Must respect user context file if present
+* Must produce structured markdown summary
+
+---
+
+# 4. Safe Editing Workflow (Required)
+
+Autonomous agents must follow this exact procedure for any code change.
+
+## Step 1 — Understand the request
+
+* Identify *exactly* which module(s) are affected.
+* Determine if any config values influence the change.
+* Check if threading, audio loops, or CUDA init are in the blast radius.
+
+## Step 2 — Plan the edit
+
+* Write a minimal plan before modifying code.
+* Confirm whether the change touches **one file** or **multiple**.
+* Identify imports required.
+
+## Step 3 — Execute safely
+
+* View target lines **before** editing.
+* Perform minimal, isolated edits.
+* Do not refactor unless explicitly instructed.
+* After adding a library call, verify imports.
+
+## Step 4 — Validate immediately
+
+Use these commands:
+
+```
+uv run python -c "from scribe.core import SessionManager, AudioRecorder, Transcriber"
+uv run scribe record       # 10–15s audio
+uv run scribe gui           # GUI sanity check
+```
+
+## Step 5 — Update docs & version
+
+If code changes behavior or user‑facing features:
+
+* Update README.md
+* Update AGENTS.md (this file)
+* Increment `pyproject.toml` version
+
+---
+
+# 5. File Editing Rules
+
+These rules prevent catastrophic file corruption.
+
+## 5.1 Only Edit What You Viewed
+
+Never call a replace operation on code you haven't viewed in the same turn.
+
+## 5.2 Never Use Large Blind Replacements
+
+Avoid changing more than ~20 contiguous lines unless explicitly instructed.
+
+## 5.3 One Logical Change Per Edit
+
+Examples:
+
+* "Add a method" → 1 change
+* "Fix two unrelated bugs" → must be separate edits
+
+## 5.4 Preserve Existing Imports Unless Sure
+
+Deleting imports risks silently breaking runtime behavior.
+
+## 5.5 Never Remove Error Handling
+
+Unless the user explicitly requests a removal or redesign.
+
+---
+
+# 6. Module Reference (Interfaces to Preserve)
+
+## 6.1 SessionManager
+
+**Responsibilities:**
+
+* Create session directories
+* Provide canonical paths
+
+**Key methods:**
+
+* `__init__()`
+* Path builders for transcripts and audio chunks
+
+## 6.2 AudioRecorder
+
+**Responsibilities:**
+
+* Capture loopback audio
+* Optional mic mixing
+
+**Key methods:**
+
+* `record_loop()` — main audio capture
+* `select_device()`
+* `start_recording()` / `stop_recording()`
+
+**Constraints:**
+
+* Writes only to queue & WAV helpers
+* Must not block main thread
+
+## 6.3 Transcriber
+
+**Responsibilities:**
+
+* Consume queue
+* Chunking via pause detection
+* Whisper transcription
+
+**Key methods:**
+
+* `process_audio()` — main loop
+* `transcribe_buffer()`
+* `save_audio_chunk()`
+
+**Constraints:**
+
+* Whisper model must load after CUDA init
+* Must respect config thresholds
+
+## 6.4 MeetingSynthesizer
+
+**Responsibilities:**
+
+* Load context
+* Split transcript into blocks
+* Produce structured meeting notes
+
+**Constraints:**
+
+* Must call Ollama using configured model
+
+---
+
+# 7. Configuration Principles
+
+* All defaults live in ConfigManager.
+* YAML overrides live in `Documents/Scribe/config/`.
+* Access pattern:
+
+```
+self.config_manager.config.get("section", {}).get("key", default)
+```
+
+---
+
+# 8. Testing Matrix
+
+Agents must run these tests after any change touching:
+
+* Transcriber
+* AudioRecorder
+* MeetingSynthesizer
+* Config system
+
+### Import Test
+
+```
+uv run python -c "from scribe.core import SessionManager, AudioRecorder, Transcriber"
+```
+
+### CLI Path
+
+```
 uv run scribe record
-# Play some audio for 10-15 seconds, then Ctrl+C
-# Check that transcript_full.txt was created
 ```
 
-**GUI Test:**
-```bash
+### GUI Path
+
+```
 uv run scribe gui
-# Click record, play audio, click stop
-# Verify recording and transcription work
 ```
 
-## Common Pitfalls
+---
 
-### ❌ Don't: Edit Large Sections Blindly
-Using `replace_file_content` with 100+ lines of target content is error-prone.
+# 9. Common Failure Modes & Recovery
 
-### ✅ Do: Make Focused Changes
-View → identify specific change → edit minimal target content.
+## 9.1 File Corruption
 
-### ❌ Don't: Assume Config Values
-The config system loads from YAML. Always use `self.config_manager.config.get()` pattern.
+If a file becomes malformed:
 
-### ✅ Do: Use Config Properties
-The Transcriber already loads config in `__init__`. Use `self.min_duration`, `self.silence_threshold`, etc.
+```
+git checkout -- src/scribe/<path>
+```
 
-### ❌ Don't: Forget Daemon Threads
-Audio processing runs in daemon threads. Always use `daemon=True` when creating transcriber threads.
+Then re‑attempt edit with smaller modifications.
 
-### ✅ Do: Understand Thread Model
-- `AudioRecorder.record_loop()` runs in thread (started by `start_recording()`)
-- `Transcriber.process_audio()` runs in thread (started by CLI/GUI)
-- Both use queues for thread-safe communication
+## 9.2 Missing Method Errors
 
-## Quick Reference
+Check history:
 
-### Key Classes & Responsibilities
+```
+grep -R "def method_name" -n src/
+```
 
-**SessionManager** - Creates session directories, manages file paths
-**AudioRecorder** - Captures system audio, manages recording state
-**Transcriber** - Processes audio queue, transcribes via Whisper, smart segmentation
-**MeetingSynthesizer** - Generates AI summaries via Ollama, exports to Logseq
-**ConfigManager** - Loads and manages YAML configuration
+## 9.3 Import Failures
 
-### Key Methods to Preserve
+* Check `core/__init__.py`
+* Re‑add missing imports
+* Re‑run import test
 
-**Transcriber:**
-- `process_audio()` - Main processing loop (runs in thread)
-- `transcribe_buffer()` - Transcribes current buffer
-- `save_audio_chunk()` - Saves WAV files for debugging
-- `load_model()` - Loads Whisper with CUDA/CPU fallback
-- `load_jargon()` - Loads custom vocabulary
+## 9.4 Config Not Loading
 
-**AudioRecorder:**
-- `record_loop()` - Main recording loop (runs in thread)
-- `find_default_loopback()` - Auto-selects default speaker
-- `select_device()` - Device selection with auto/manual modes
+* Confirm YAML exists
+* Ensure `ConfigManager` is instantiated
+* Validate key path
 
-## When Things Go Wrong
+---
 
-### File Corrupted During Edit
+# 10. Documentation & Versioning Rules
+
+## When to Update README.md
+
+* Feature added
+* Behavior changed
+* Config changed
+* Models updated
+
+## When to Update AGENTS.md
+
+* Architecture changes
+* New bugs/lessons learned
+* Workflow changes
+
+## When to Increment Version
+
+* PATCH: bug fixes
+* MINOR: feature additions
+* MAJOR: breaking changes
+
+---
+
+# 11. Mandatory Change Logging (`AGENT_LOG.md`)
+
+All agents must record every code modification in a single append-only file at the project root named `AGENT_LOG.md`.
+
+## 11.1 Logging Rules
+
+* You MUST append a new entry at the **top** of `AGENT_LOG.md` for every code-modifying request.
+* If you cannot update the log, you MUST NOT modify any other file.
+* The log MUST remain append-only; never modify or delete prior entries.
+
+## 11.2 Required Entry Structure
+
+Each entry MUST follow this exact structure:
+
+```markdown
+## <ISO-8601 UTC timestamp> — Agent: <agent-id>
+
+### User request
+<1–2 sentence paraphrase>
+
+### Plan
+- Step 1: ...
+- Step 2: ...
+- Step 3: ...
+
+### Files changed
+- `path/to/file.py` — reason
+- ...
+
+### Code changes (high-level)
+- Bullet-point summary of functional behavior changes
+
+### Tests run
+- [x] <command> — ran
+- [ ] <command> — skipped (reason)
+
+### Known limitations / follow-ups
+- ...
+```
+
+## 11.3 Optional Machine-Readable Footer
+
+Agents may include a JSON footer for tooling:
+
+```markdown
+<!-- AGENT_SUMMARY
+{"timestamp": "<ISO-8601>",
+ "agent": "<agent-id>",
+ "files_changed": [...],
+ "risk": "low|medium|high"}
+-->
+```
+
+## 11.4 Granularity Requirement
+
+* One log entry per user request that leads to code changes.
+* Multiple related file edits for the same request belong in a single entry.
+
+---
+
+# 12. Golden Rules (TL;DR)
+
+1. **View before you edit.**
+2. **Never break CUDA init order.**
+3. **Never hardcode config values.**
+4. **Threads must remain daemon threads.**
+5. **Use queues for all thread communication.**
+6. **One logical change per edit.**
+7. **Test immediately after modifying code.**
+8. **Update docs + version when behavior changes.**
+9. **When in doubt: stop, inspect, recover, retry.**
+
+# 13. Validation & Enforcement
+
+These mechanisms are optional for humans but describe how to enforce the rules in this document.
+
+## 13.1 Suggested Log Validator Script (Git Bash / POSIX Shell)
+
+On Windows with Git for Windows, Git hooks run via the bundled POSIX shell (Git Bash). The following script works on Windows and Linux as long as `bash` is available.
+
+Create `scripts/check_agent_log.sh` and make it executable (on Windows this typically just needs the correct shebang; execute bit is optional):
+
 ```bash
-git checkout src/scribe/core/transcriber.py
-# Start over with smaller, more focused edit
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Files changed in the staged set
+CHANGED_FILES=$(git diff --cached --name-only)
+
+# If no staged changes, nothing to do
+if [[ -z "$CHANGED_FILES" ]]; then
+  exit 0
+fi
+
+# Determine if any tracked code/config files changed (heuristic)
+NEEDS_LOG=0
+while IFS= read -r file; do
+  case "$file" in
+    src/*|config/*|pyproject.toml|AGENTS.md|README.md)
+      NEEDS_LOG=1
+      ;;
+  esac
+done <<< "$CHANGED_FILES"
+
+if [[ "$NEEDS_LOG" -eq 0 ]]; then
+  exit 0
+fi
+
+# Check whether AGENT_LOG.md is staged
+if ! grep -q "^AGENT_LOG.md$" <<< "$CHANGED_FILES"; then
+  echo "ERROR: Code/config/docs changes detected but AGENT_LOG.md is not updated." >&2
+  echo "       Please add an entry at the top of AGENT_LOG.md describing this change." >&2
+  exit 1
+fi
 ```
 
-### Missing Method After Refactor
-1. Check if it exists: `grep -r "def method_name" src/`
-2. Find it in git history: `git log -p --all -- src/scribe/core.py | grep -A 20 "def method_name"`
-3. Restore from git or re-implement
+## 13.2 Git Hook Integration (Git Bash)
 
-### Import Errors
-1. Check `__init__.py` exports
-2. Verify module imports at top of file
-3. Test import: `uv run python -c "from scribe.core import ClassName"`
+To enforce logging locally with the default Git for Windows / Git Bash setup:
 
-### Config Not Loading
-1. Check `Documents/Scribe/config/config.yaml` exists
-2. Verify ConfigManager is initialized
-3. Check config key path: `self.config_manager.config.get("section", {}).get("key", default)`
+1. Save the script above as `scripts/check_agent_log.sh`.
+2. Create `.git/hooks/pre-commit` with:
 
-## Documentation Maintenance
+   ```bash
+   #!/usr/bin/env bash
+   scripts/check_agent_log.sh
+   ```
+3. (Optional on Windows) Mark the hook executable:
 
-**CRITICAL:** Keep documentation synchronized with code changes.
+   ```bash
+   chmod +x .git/hooks/pre-commit
+   ```
 
-### Files to Update
+Developers who enable this hook will be blocked from committing code/config/doc changes unless `AGENT_LOG.md` has been updated and staged.
 
-**README.md** - User-facing documentation
-- Update when adding/removing features
-- Update configuration examples
-- Update installation or usage instructions
-- Keep feature list current
+## 13.3 Optional PowerShell Variant (Windows)
 
-**AGENTS.md** - This file
-- Update architecture diagrams when structure changes
-- Add new lessons learned from bugs/issues
-- Update quick reference when classes/methods change
-- Document new patterns or anti-patterns discovered
+If you prefer to use PowerShell directly as your hook on Windows, you can instead create `scripts/check_agent_log.ps1`:
 
-**pyproject.toml** - Project metadata and dependencies
-- **Add dependencies** when importing new libraries
-- **Increment version** following semantic versioning:
-  - `MAJOR.MINOR.PATCH` (e.g., `0.3.1`)
-  - MAJOR: Breaking changes (rare for this project)
-  - MINOR: New features, refactorings (e.g., `0.2.0` → `0.3.0`)
-  - PATCH: Bug fixes, small improvements (e.g., `0.3.0` → `0.3.1`)
-- Update project description if scope changes
+```powershell
+param()
 
-### When to Update Documentation
+# Get staged files
+$changedFiles = git diff --cached --name-only
+if (-not $changedFiles) {
+    exit 0
+}
 
-**During Implementation:**
-- Add new dependencies to `pyproject.toml` immediately
-- Update README.md if user-facing features change
-- Update AGENTS.md if architecture/patterns change
+$needsLog = $false
+foreach ($file in $changedFiles) {
+    switch -Wildcard ($file) {
+        'src/*' { $needsLog = $true }
+        'config/*' { $needsLog = $true }
+        'pyproject.toml' { $needsLog = $true }
+        'AGENTS.md' { $needsLog = $true }
+        'README.md' { $needsLog = $true }
+    }
+}
 
-**After Completing Work:**
-- Review README.md for accuracy
-- Increment version in `pyproject.toml`
-- Update AGENTS.md with lessons learned
-- Check that all examples in docs still work
+if (-not $needsLog) {
+    exit 0
+}
 
-### Version Increment Guidelines
+if (-not ($changedFiles -contains 'AGENT_LOG.md')) {
+    Write-Error 'Code/config/docs changes detected but AGENT_LOG.md is not updated.'
+    Write-Error 'Please add an entry at the top of AGENT_LOG.md describing this change.'
+    exit 1
+}
+```
+
+Then create `.git/hooks/pre-commit` as a small wrapper to call PowerShell:
 
 ```bash
-# Bug fix or small improvement
-version = "0.3.1" → "0.3.2"
-
-# New feature (jargon config, context support)
-version = "0.3.2" → "0.4.0"
-
-# Major refactor (core module split)
-version = "0.4.0" → "0.5.0"
-
-# Breaking change (API change)
-version = "0.5.0" → "1.0.0"
+#!/usr/bin/env bash
+pwsh -NoLogo -NoProfile -File "scripts/check_agent_log.ps1"
 ```
 
-**Example Commit Flow:**
-1. Make code changes
-2. Update README.md (if feature-related)
-3. Update AGENTS.md (if architecture/lessons)
-4. Increment version in `pyproject.toml`
-5. Commit with descriptive message
+(If you use `powershell.exe` instead of `pwsh`, adjust the command accordingly.)
 
-## Summary
-
-**Golden Rules:**
-1. ✅ Keep files small and focused
-2. ✅ View before you edit
-3. ✅ Test after each change
-4. ✅ Use config values, don't hardcode
-5. ✅ Preserve thread-safe patterns
-6. ✅ When in doubt, git checkout and start fresh
-7. ✅ **Keep documentation and version current**
+This achieves the same enforcement but leverages your native Windows PowerShell environment.
